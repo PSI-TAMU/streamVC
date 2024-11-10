@@ -1,0 +1,26 @@
+# torch
+# numpy
+# librosa
+# scipy
+# tensorboard
+# soundfile
+# amfm_decompy
+# matplotlib
+# ffmpeg
+# tqdm
+# scikit-learn
+# resampy
+# fairseq
+
+torch
+numpy
+librosa
+tensorboard
+resampy
+speechbrain
+scipy
+matplotlib
+pyloudnorm
+scikit-learn
+pip==24.0
+fairseq
