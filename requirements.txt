@@ -1,17 +1,3 @@
-# torch
-# numpy
-# librosa
-# scipy
-# tensorboard
-# soundfile
-# amfm_decompy
-# matplotlib
-# ffmpeg
-# tqdm
-# scikit-learn
-# resampy
-# fairseq
-
 torch
 numpy
 librosa
