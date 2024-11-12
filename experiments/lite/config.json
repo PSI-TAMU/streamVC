@@ -1,12 +1,14 @@
 {
-    "training_file": "/mnt/nvme-data1/waris/streamVC_data/data_split/train.txt",
-    "validation_file": "/mnt/nvme-data1/waris/streamVC_data/data_split/valid.txt",
-    "km_path": "/mnt/nvme-data1/waris/CortexCraft/CoAC/pretrained_models/kmeans/data_hubert_base_ls960_layer9_clusters200.bin",
+    "training_fpath": "data",
+    "validation_fpath": "data",
+    "km_path": "pretrained_models/kmeans/data_hubert_base_ls960_layer9_clusters200.bin",
+    "hubert_layer": 9,
+    "hubert_ckpt": "pretrained_models/hubert/hubert_base_ls960.pt",
 
     "spkr_as_snac": true,
     "resblock": "1",
     "num_gpus": 0,
-    "batch_size": 16,
+    "batch_size": 1,
     "learning_rate": 0.0002,
     "adam_b1": 0.8,
     "adam_b2": 0.99,
@@ -77,6 +79,7 @@
 
     "dist_config": {
         "dist_backend": "nccl",
-        "dist_url": "env://"
+        "dist_url": "tcp://localhost:54321",
+        "world_size": 1
     }
 }

@@ -9,7 +9,12 @@ from torch.nn.utils import weight_norm
 matplotlib.use("Agg")
 import matplotlib.pylab as plt
 import torch.nn.functional as F
-# import fairseq
+import fairseq
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 
 def plot_spectrogram(spectrogram):
     fig, ax = plt.subplots(figsize=(10, 2))

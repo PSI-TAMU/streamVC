@@ -161,6 +161,8 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-pretrained_models/
+pretrained_models/hubert/**
+pretrained_models/speaker/**
 experiments/**/g_*
 experiments/**/do_*
+**/logs/

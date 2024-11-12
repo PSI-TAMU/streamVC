@@ -68,3 +68,25 @@ def generate_speaker_embedding_torch_batched(wave):
     embed = torch.cat([spk_emb_x, spk_emb_t], dim=-1)
 
     return embed
+
+def generate_and_save_speaker_embedding(wav_file, sample_rate:int=16000):
+    """
+    Args:
+        wav_file: Path to audio wav file
+        sample_rate: target sample rate
+    
+    returns:
+        1D Speaker Embed vector (H,)
+    """
+    wave, _ = librosa.load(wav_file, sr=sample_rate)
+    wave = torch.tensor(np.trim_zeros(wave))
+
+    spk_emb_x = _xvec_model.encode_batch(wavs=wave.unsqueeze(0)).squeeze()
+    spk_emb_t = _tdnn_model.encode_batch(wavs=wave.unsqueeze(0)).squeeze()
+    embed = torch.cat([spk_emb_x, spk_emb_t], dim=0)
+    
+    embed = embed.cpu().numpy()
+    
+    (Path(wav_file).parent.parent / 'spkr').mkdir(parents=True, exist_ok=True)
+    embed_path = Path(wav_file).parent.parent / 'spkr' / f"{Path(wav_file).stem}.spk"
+    np.save(embed_path, embed, allow_pickle=False)

@@ -12,8 +12,7 @@ def build_from_path(in_dir):
     print("Processing Data ...")
     pitch_scaler = StandardScaler()
 
-    # files = glob.glob(os.path.join(in_dir, "**/*.pit.npy"), recursive=True)
-    files = glob.glob(os.path.join(in_dir, "**/native_tc/pitch/*.pit.npy"))
+    files = glob.glob(os.path.join(in_dir, "**/*.pit.npy"), recursive=True)
 
     for i, file in enumerate(tqdm(files)):
         pitch = np.load(file)

@@ -27,17 +27,17 @@ from speaker_encoder import encoder as embedder
 torch.backends.cudnn.benchmark = True
 
 
-def train(rank, local_rank, a, h):
+def train(rank, a, h):
     if h.num_gpus > 1:
         init_process_group(
             backend=h.dist_config['dist_backend'],
             init_method=h.dist_config['dist_url'],
             rank=rank,
-            world_size=h.num_gpus,
+            world_size=h.dist_config['world_size'] * h.num_gpus,
         )
 
     torch.cuda.manual_seed(h.seed)
-    device = torch.device('cuda:{:d}'.format(local_rank))
+    device = torch.device('cuda:{:d}'.format(rank))
 
     encoder = Encoder(h).to(device)
     code_predictor = CodePredictor(h.upsample_initial_channel, h.num_codes).to(device)
@@ -84,13 +84,13 @@ def train(rank, local_rank, a, h):
                 last_epoch = state_dict_do['epoch']
 
     if h.num_gpus > 1:
-        encoder = DistributedDataParallel(encoder, device_ids=[local_rank]).to(device)
+        encoder = DistributedDataParallel(encoder, device_ids=[rank]).to(device)
         generator = DistributedDataParallel(
             generator,
-            device_ids=[local_rank],
+            device_ids=[rank],
         ).to(device)
-        mpd = DistributedDataParallel(mpd, device_ids=[local_rank]).to(device)
-        msd = DistributedDataParallel(msd, device_ids=[local_rank]).to(device)
+        mpd = DistributedDataParallel(mpd, device_ids=[rank]).to(device)
+        msd = DistributedDataParallel(msd, device_ids=[rank]).to(device)
 
     optim_e = torch.optim.AdamW(itertools.chain(encoder.parameters(), code_predictor.parameters()), 
                                 h.learning_rate, betas=[h.adam_b1, h.adam_b2])
@@ -115,7 +115,7 @@ def train(rank, local_rank, a, h):
     trainset = CodeDataset(training_filelist, h.segment_size, h.code_hop_size, 
                            h.n_fft, h.num_mels, h.hop_size,
                            h.win_size, h.sampling_rate, h.fmin, h.fmax, h.km_path,
-                           n_cache_reuse=0, fmax_loss=h.fmax_for_loss,
+                           fmax_loss=h.fmax_for_loss,
                            device=device)
 
     train_sampler = DistributedSampler(trainset) if h.num_gpus > 1 else None
@@ -127,7 +127,7 @@ def train(rank, local_rank, a, h):
         validset = CodeDataset(validation_filelist, h.segment_size, h.code_hop_size, 
                                h.n_fft, h.num_mels, h.hop_size,
                                h.win_size, h.sampling_rate, h.fmin, h.fmax, h.km_path,
-                               False, n_cache_reuse=0,
+                               False,
                                fmax_loss=h.fmax_for_loss, device=device)
         validation_loader = DataLoader(validset, num_workers=h.num_workers, shuffle=False, sampler=None,
                                        batch_size=h.batch_size, pin_memory=True, drop_last=True)
@@ -337,21 +337,14 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--group_name', default=None)
-    parser.add_argument('-p', '--checkpoint_path', default='/mnt/nvme-data1/waris/CortexCraft/streamingVC/experiments/litev0.2_s/checkpoints')
-    parser.add_argument('-c', '--config', default='/mnt/nvme-data1/waris/CortexCraft/streamingVC/experiments/litev0.2_s/config.json')
+    parser.add_argument('-p', '--checkpoint_path', default='experiments/base/encoder')
+    parser.add_argument('-c', '--config', default='experiments/base/config.json')
     parser.add_argument('--training_epochs', default=6000, type=int)
-    parser.add_argument('--training_steps', default=1500000, type=int)
-    parser.add_argument('--stdout_interval', default=5, type=int)
-    parser.add_argument('--checkpoint_interval', default=20000, type=int)
-    parser.add_argument('--pretrained_encoder_only', default=False, type=bool)
-    parser.add_argument('--use_pretrained', default=False, type=bool)
-    parser.add_argument('--summary_interval', default=100, type=int)
-    parser.add_argument('--validation_interval', default=5000, type=int)
-    parser.add_argument('--fine_tuning', default=False, type=bool)
-    parser.add_argument('--local_rank', default=0, type=int)
-    parser.add_argument('--distributed-world-size', type=int)
-    parser.add_argument('--distributed-port', type=int)
+    parser.add_argument('--training_steps', default=300000, type=int)
+    parser.add_argument('--stdout_interval', default=20, type=int)
+    parser.add_argument('--checkpoint_interval', default=50000, type=int)
+    parser.add_argument('--summary_interval', default=50, type=int)
+    parser.add_argument('--validation_interval', default=10, type=int)
 
     a = parser.parse_args()
 
@@ -360,24 +353,22 @@ def main():
 
     json_config = json.loads(data)
     h = AttrDict(json_config)
-    build_env(a.config, 'config.json', a.checkpoint_path)
+    # build_env(a.config, 'config.json', a.checkpoint_path)
 
     h.pretrained_encoder_only = a.pretrained_encoder_only
     torch.manual_seed(h.seed)
-    if torch.cuda.is_available() and 'WORLD_SIZE' in os.environ:
+    if torch.cuda.is_available():
         torch.cuda.manual_seed(h.seed)
-        h.num_gpus = int(os.environ['WORLD_SIZE'])
+        h.num_gpus = torch.cuda.device_count()
         h.batch_size = int(h.batch_size / h.num_gpus)
-        # local_rank = a.local_rank
-        # rank = a.local_rank
-        local_rank = int(os.environ["LOCAL_RANK"])
-        rank = local_rank
         print('Batch size per GPU :', h.batch_size)
     else:
-        rank = 0
-        local_rank = 0
+        pass
 
-    train(rank, local_rank, a, h)
+    if h.num_gpus > 1:
+        mp.spawn(train, nprocs=h.num_gpus, args=(a, h,))
+    else:
+        train(0, a, h)
 
 
 if __name__ == '__main__':
