@@ -375,7 +375,7 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-p', '--checkpoint_path', default='experiments/base/temp')
+    parser.add_argument('-p', '--checkpoint_path', default='experiments/base')
     parser.add_argument('-c', '--config', default='experiments/base/config.json')
     parser.add_argument('--pretrained_encoder_path', default='experiments/base/encoder')
     parser.add_argument('--training_epochs', default=6000, type=int)
