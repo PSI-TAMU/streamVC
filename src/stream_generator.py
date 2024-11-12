@@ -11,7 +11,7 @@ LRELU_SLOPE = 0.1
 
 class Generator(torch.nn.Module):
     def __init__(self, h):
-        super(GeneratorS, self).__init__()
+        super(Generator, self).__init__()
         self.h = h
         self.num_kernels = len(h.resblock_kernel_sizes)
         self.num_upsamples = len(h.upsample_rates)

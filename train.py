@@ -14,15 +14,15 @@ from torch.utils.data import DistributedSampler, DataLoader
 from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
 from src.dataset import CodeDatasetPED as CodeDataset, mel_spectrogram, get_dataset_filelist
-from src.stream.encoder import Encoder
-from src.stream.code_generator import CodeGenerator
+from src.encoder import Encoder
+from src.code_generator import CodeGenerator
 from src.discriminator import MultiPeriodDiscriminator, MultiScaleDiscriminator 
 from src.code_predictor import CodePredictor
 from src.loss import feature_loss, generator_loss, discriminator_loss, LossPED
 from src.stft_loss import MultiResolutionSTFTLoss
 from src.utils import plot_spectrogram, scan_checkpoint, load_checkpoint, \
     save_checkpoint, build_env, AttrDict, get_fairseq_model, fairseq_loss, speaker_loss
-from speaker_encoder import encoder as embedder
+from speaker import encoder as embedder
 
 torch.backends.cudnn.benchmark = True
 
@@ -68,20 +68,27 @@ def train(rank, a, h):
     last_epoch = -1
     if cp_g is None or cp_do is None:
         state_dict_do = None
+
+        # load pretrained encoder
+        cp_g_e = scan_checkpoint(a.pretrained_encoder_path, 'g_')
+        cp_do_e = scan_checkpoint(a.pretrained_encoder_path, 'do_')
+        if cp_g_e is not None or cp_do_e is not None:
+            state_dict_g_e = load_checkpoint(cp_g_e, device)
+            state_dict_do_e = load_checkpoint(cp_do_e, device)
+            encoder.load_state_dict(state_dict_g_e['encoder'])
+            code_predictor.load_state_dict(state_dict_do_e['code_predictor'])
     else:
         state_dict_g = load_checkpoint(cp_g, device)
         state_dict_do = load_checkpoint(cp_do, device)
         encoder.load_state_dict(state_dict_g['encoder'])
         code_predictor.load_state_dict(state_dict_do['code_predictor'])
-        if not h.pretrained_encoder_only:
-            encoder.load_state_dict(state_dict_g['encoder'])
-            generator.load_state_dict(state_dict_g['generator'])
-            code_predictor.load_state_dict(state_dict_do['code_predictor'])
-            mpd.load_state_dict(state_dict_do['mpd'])
-            msd.load_state_dict(state_dict_do['msd'])
-            if not a.use_pretrained:
-                steps = state_dict_do['steps'] + 1
-                last_epoch = state_dict_do['epoch']
+        encoder.load_state_dict(state_dict_g['encoder'])
+        generator.load_state_dict(state_dict_g['generator'])
+        code_predictor.load_state_dict(state_dict_do['code_predictor'])
+        mpd.load_state_dict(state_dict_do['mpd'])
+        msd.load_state_dict(state_dict_do['msd'])
+        steps = state_dict_do['steps'] + 1
+        last_epoch = state_dict_do['epoch']
 
     if h.num_gpus > 1:
         encoder = DistributedDataParallel(encoder, device_ids=[rank]).to(device)
@@ -99,12 +106,12 @@ def train(rank, a, h):
     optim_d = torch.optim.AdamW(itertools.chain(msd.parameters(), mpd.parameters()), h.learning_rate,
                                 betas=[h.adam_b1, h.adam_b2])
 
+    # if state_dict_do is None and cp_do_e is not None:
+    #     optim_e.load_state_dict(state_dict_do_e['optim_e'])
     if state_dict_do is not None:
-        if not a.use_pretrained:
-            optim_e.load_state_dict(state_dict_do['optim_e'])
-            if not h.pretrained_encoder_only:
-                optim_g.load_state_dict(state_dict_do['optim_g'])
-                optim_d.load_state_dict(state_dict_do['optim_d'])
+        optim_e.load_state_dict(state_dict_do['optim_e'])
+        optim_g.load_state_dict(state_dict_do['optim_g'])
+        optim_d.load_state_dict(state_dict_do['optim_d'])
 
     scheduler_e = torch.optim.lr_scheduler.ExponentialLR(optim_e, gamma=h.lr_decay, last_epoch=last_epoch)
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optim_g, gamma=h.lr_decay, last_epoch=last_epoch)
@@ -157,15 +164,20 @@ def train(rank, a, h):
             x = {k: torch.autograd.Variable(v.to(device, non_blocking=False)) for k, v in x.items()}
             
             # Streaming Encoder
-            encoder_buf = encoder.init_buffers(y.shape[0], y.device)
-            x_hat, encoder_buf = encoder(y, encoder_buf)
-            code_logits = code_predictor(x_hat)
+            if hasattr(encoder, 'module'):
+                encoder_buf = encoder.module.init_buffers(y.shape[0], y.device)
+                x_hat, encoder_buf = encoder.module(y, encoder_buf)
+                code_logits = code_predictor.module(x_hat)
+            else:
+                encoder_buf = encoder.init_buffers(y.shape[0], y.device)
+                x_hat, encoder_buf = encoder(y, encoder_buf)
+                code_logits = code_predictor(x_hat)
             code = x['tokens']
 
             encoder_loss = encoder_criterion(code_logits.transpose(1,2), code)
             encoder_loss.backward()
 
-            if ((steps + 1) % h.encoder_accum_steps == 0) or (steps + 1 == len(train_loader)):
+            if (((steps + 1) % h.encoder_accum_steps == 0) or (steps + 1 == len(train_loader))) and not hasattr(encoder, 'module'):
                 # accumulate gradients for accum steps
                 for param in encoder.parameters():
                     param.grad /= h.encoder_accum_steps
@@ -173,10 +185,16 @@ def train(rank, a, h):
                 optim_e.zero_grad()
             
             # Streaming Decoder
-            generator_buf = generator.init_buffers(y.shape[0], y.device)
-            x['x_hat'] = x_hat.detach()
-            y_g_hat, generator_buf, predict_pitch, avg_pitch, \
-                predict_energy, avg_energy = generator(generator_buf, **x)
+            if hasattr(generator, 'module'):
+                generator_buf = generator.module.init_buffers(y.shape[0], y.device)
+                x['x_hat'] = x_hat
+                y_g_hat, generator_buf, predict_pitch, avg_pitch, \
+                    predict_energy, avg_energy = generator.module(generator_buf, **x)
+            else:
+                generator_buf = generator.init_buffers(y.shape[0], y.device)
+                x['x_hat'] = x_hat.detach()
+                y_g_hat, generator_buf, predict_pitch, avg_pitch, \
+                    predict_energy, avg_energy = generator(generator_buf, **x)
             
             assert y_g_hat.shape == y.shape, f"Mismatch in vocoder output shape - {y_g_hat.shape} != {y.shape}"
 
@@ -187,11 +205,17 @@ def train(rank, a, h):
             optim_d.zero_grad()
 
             # MPD
-            y_df_hat_r, y_df_hat_g, _, _ = mpd(y, y_g_hat.detach())
+            if hasattr(mpd, 'module'):
+                y_df_hat_r, y_df_hat_g, _, _ = mpd.module(y, y_g_hat.detach())
+            else:
+                y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat.detach())
             loss_disc_f, losses_disc_f_r, losses_disc_f_g = discriminator_loss(y_df_hat_r, y_df_hat_g)
 
             # MSD
-            y_ds_hat_r, y_ds_hat_g, _, _ = msd(y, y_g_hat.detach())
+            if hasattr(msd, 'module'):
+                y_ds_hat_r, y_ds_hat_g, _, _ = msd.module(y, y_g_hat.detach())
+            else:
+                y_ds_hat_r, y_ds_hat_g, _, _ = msd(y, y_g_hat.detach())
             loss_disc_s, losses_disc_s_r, losses_disc_s_g = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
 
             loss_disc_all = loss_disc_s + loss_disc_f
@@ -209,8 +233,12 @@ def train(rank, a, h):
             sc_loss, mag_loss = stft_criterion(y_g_hat.squeeze(1), y.squeeze(1))
             stft_loss = (sc_loss + mag_loss) * 18
 
-            y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
-            y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
+            if hasattr(mpd, 'module'):
+                y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd.module(y, y_g_hat)
+                y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd.module(y, y_g_hat)
+            else:
+                y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(y, y_g_hat)
+                y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(y, y_g_hat)
             loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
             loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
             loss_gen_f, losses_gen_f = generator_loss(y_df_hat_g)
@@ -227,7 +255,7 @@ def train(rank, a, h):
                 loss_f = torch.tensor(0.0)
 
             if h.use_speaker_loss:
-                loss_spkr = 0.05 * speaker_loss(y_g_hat, x['spkr'], embedder)
+                loss_spkr = 10 * speaker_loss(y_g_hat, x['spkr'], embedder)
                 loss_gen_all += loss_spkr
             else:
                 loss_spkr = torch.tensor(0.0)
@@ -288,13 +316,23 @@ def train(rank, a, h):
                             y = y.to(device, non_blocking=False)
                             x = {k: v.to(device, non_blocking=False) for k, v in x.items()}
 
-                            encoder_buf = encoder.init_buffers(y.shape[0], y.device)
-                            x_hat, encoder_buf = encoder(y.unsqueeze(1), encoder_buf)
+                            if hasattr(encoder, 'module'):
+                                encoder_buf = encoder.module.init_buffers(y.shape[0], y.device)
+                                x_hat, encoder_buf = encoder.module(y.unsqueeze(1), encoder_buf)
+                            else:
+                                encoder_buf = encoder.init_buffers(y.shape[0], y.device)
+                                x_hat, encoder_buf = encoder(y.unsqueeze(1), encoder_buf)
 
-                            generator_buf = generator.init_buffers(y.shape[0], y.device)
-                            x['x_hat'] = x_hat
-                            y_g_hat, generator_buf, predict_pitch, avg_pitch, \
-                                predict_energy, avg_energy = generator(generator_buf, **x)
+                            if hasattr(generator, 'module'):
+                                generator_buf = generator.module.init_buffers(y.shape[0], y.device)
+                                x['x_hat'] = x_hat
+                                y_g_hat, generator_buf, predict_pitch, avg_pitch, \
+                                    predict_energy, avg_energy = generator.module(generator_buf, **x)
+                            else:
+                                generator_buf = generator.init_buffers(y.shape[0], y.device)
+                                x['x_hat'] = x_hat
+                                y_g_hat, generator_buf, predict_pitch, avg_pitch, \
+                                    predict_energy, avg_energy = generator(generator_buf, **x)
 
                             y_mel = torch.autograd.Variable(y_mel.to(device, non_blocking=False))
                             y_g_hat_mel = mel_spectrogram(y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate,
@@ -337,10 +375,11 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-p', '--checkpoint_path', default='experiments/base/encoder')
+    parser.add_argument('-p', '--checkpoint_path', default='experiments/base/temp')
     parser.add_argument('-c', '--config', default='experiments/base/config.json')
+    parser.add_argument('--pretrained_encoder_path', default='experiments/base/encoder')
     parser.add_argument('--training_epochs', default=6000, type=int)
-    parser.add_argument('--training_steps', default=300000, type=int)
+    parser.add_argument('--training_steps', default=800000, type=int)
     parser.add_argument('--stdout_interval', default=20, type=int)
     parser.add_argument('--checkpoint_interval', default=50000, type=int)
     parser.add_argument('--summary_interval', default=50, type=int)
@@ -355,7 +394,6 @@ def main():
     h = AttrDict(json_config)
     # build_env(a.config, 'config.json', a.checkpoint_path)
 
-    h.pretrained_encoder_only = a.pretrained_encoder_only
     torch.manual_seed(h.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(h.seed)

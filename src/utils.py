@@ -113,5 +113,6 @@ def speaker_loss(output, gt_embed, embedder):
     """
     output = output.squeeze(1)
     output_embed = embedder.generate_speaker_embedding_torch_batched(output)
-    speaker_loss = F.mse_loss(gt_embed, output_embed.squeeze(1))
+    # speaker_loss = F.mse_loss(gt_embed, output_embed.squeeze(1))
+    speaker_loss = F.cosine_embedding_loss(gt_embed, output_embed.squeeze(1), torch.ones(gt_embed.size(0)).to(gt_embed.device))
     return speaker_loss

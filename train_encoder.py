@@ -220,7 +220,7 @@ def main():
     parser.add_argument('--stdout_interval', default=20, type=int)
     parser.add_argument('--checkpoint_interval', default=50000, type=int)
     parser.add_argument('--summary_interval', default=50, type=int)
-    parser.add_argument('--validation_interval', default=10, type=int)
+    parser.add_argument('--validation_interval', default=10000, type=int)
 
     a = parser.parse_args()
 
