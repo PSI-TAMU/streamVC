@@ -144,6 +144,7 @@ def process_wav(wav_file, ref_wav_file=None, out_file=None, sample_rate:int=1600
     else:
         return out_audio
 
+
 @torch.no_grad()
 def process_wav_stream(wav_file, ref_wav_file=None, out_file=None, sample_rate:int=16000, chunk_size:int=200):
     """
@@ -163,7 +164,10 @@ def process_wav_stream(wav_file, ref_wav_file=None, out_file=None, sample_rate:i
     if ref_wav_file is None:
         embed = get_anon_embed(wav_file)
     else:
-        embed = get_speaker_embed(ref_wav_file)
+        if isinstance(ref_wav_file, str):
+            embed = get_speaker_embed(ref_wav_file)
+        else:
+            embed = ref_wav_file
     spkr = torch.from_numpy(embed).to(_device).unsqueeze(0)
 
     #create chunks

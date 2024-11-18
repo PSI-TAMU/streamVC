@@ -10,3 +10,6 @@ pyloudnorm
 scikit-learn
 pip==24.0
 fairseq
+onnxruntime
+pandas
+seaborn
