@@ -227,6 +227,88 @@ class CodeDataset(torch.utils.data.Dataset):
         return len(self.audio_files)
 
 
+class VQCodeDataset(torch.utils.data.Dataset):
+    def __init__(self, training_files, segment_size, code_hop_size, 
+                 sampling_rate, split=True, device=None):
+
+        self.audio_files = training_files
+        random.seed(1234)
+        self.segment_size = segment_size
+        self.code_hop_size = code_hop_size
+        self.sampling_rate = sampling_rate
+        self.split = split
+        self.device = device
+
+    def _sample_interval(self, seqs, seq_len=None):
+        N = max([v.shape[-1] for v in seqs])
+        if seq_len is None:
+            seq_len = self.segment_size if self.segment_size > 0 else N
+
+        hops = [N // v.shape[-1] for v in seqs]
+        lcm = np.lcm.reduce(hops)
+
+        # Randomly pickup with the batch_max_steps length of the part
+        interval_start = 0
+        interval_end = N // lcm - seq_len // lcm
+
+        start_step = random.randint(interval_start, interval_end)
+
+        new_seqs = []
+        for i, v in enumerate(seqs):
+            start = start_step * (lcm // hops[i])
+            end = (start_step + seq_len // lcm) * (lcm // hops[i])
+            new_seqs += [v[..., start:end]]
+
+        return new_seqs
+
+    def __getitem__(self, index):
+        wav_fpath = self.audio_files[index]
+        tokens = wav_fpath.parent.parent / "code" / f"{wav_fpath.stem}.km"
+        hubert_feats = wav_fpath.parent.parent / "hubert" / f"{wav_fpath.stem}.hub.npy"
+
+        tokens = open(tokens, 'r').readlines()[0].strip()
+        tokens = np.array([int(i) for i in tokens.split(" ")])
+
+        audio, sampling_rate = load_audio(wav_fpath)
+        if sampling_rate != self.sampling_rate:
+            import resampy
+            audio = resampy.resample(audio, sampling_rate, self.sampling_rate)
+
+        # audio = audio / MAX_WAV_VALUE
+        # audio = normalize(audio) * 0.95
+        audio = audio / (max(abs(audio)) + 0.001) * 0.95
+        hubert_feats = np.load(hubert_feats).T
+
+        # Trim audio ending
+        code_length = min(audio.shape[0] // self.code_hop_size, tokens.shape[-1])
+        tokens = tokens[:code_length]
+        hubert_feats = hubert_feats[:, :code_length]
+        
+        audio = audio[:code_length * self.code_hop_size]
+        
+        assert audio.shape[0] // self.code_hop_size == tokens.shape[-1], "Code audio mismatch"
+
+        while audio.shape[0] < self.segment_size:
+            audio = np.hstack([audio, audio])
+            tokens = np.hstack([tokens, tokens])
+            hubert_feats = np.hstack([hubert_feats, hubert_feats])
+
+        audio = torch.FloatTensor(audio)
+        audio = audio.unsqueeze(0)
+
+        tokens = torch.from_numpy(tokens)
+
+        assert audio.size(1) >= self.segment_size, "Padding not supported!!"
+        
+        audio, hubert_feats = self._sample_interval([audio, hubert_feats])
+
+        return audio.squeeze(0), hubert_feats, str(wav_fpath)
+
+    def __len__(self):
+        return len(self.audio_files)
+
+
+
 class CodeDatasetPED(torch.utils.data.Dataset):
     def __init__(self, training_files, segment_size, code_hop_size, n_fft, num_mels,
                  hop_size, win_size, sampling_rate, fmin, fmax, km_path, split=True,

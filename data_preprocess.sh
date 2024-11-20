@@ -1,5 +1,5 @@
 #!/bin/bash
 
-python preprocess/preprocess_data.py data -c experiments/base/config.json
+python preprocess/preprocess_data.py /mnt/nvme-data1/waris/streamVC_data/data -c experiments/base/config.json
 
-python preprocess/pitch_norm.py data
+python preprocess/pitch_norm.py /mnt/nvme-data1/waris/streamVC_data/data

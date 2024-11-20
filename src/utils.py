@@ -96,6 +96,7 @@ def get_fairseq_model(h, device):
     
     return fairseq_model
 
+
 def fairseq_loss(output, gt, fairseq_model):
     """
     fairseq feature mse loss, based on https://arxiv.org/abs/2301.04388

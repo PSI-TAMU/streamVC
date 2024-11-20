@@ -4,6 +4,8 @@
     "km_path": "pretrained_models/kmeans/data_hubert_base_ls960_layer9_clusters200.bin",
     "hubert_layer": 9,
     "hubert_ckpt": "pretrained_models/hubert/hubert_base_ls960.pt",
+    "hubert_dim": 768,
+    "fsq_levels": [8, 6, 5],
 
     "spkr_as_snac": true,
     "resblock": "1",
@@ -74,7 +76,7 @@
     "use_fairseq_loss": true,
     "fairseq_checkpoint_path": "pretrained_models/hubert/hubert_base_ls960.pt",
 
-    "num_workers": 4,
+    "num_workers": 1,
 
     "dist_config": {
         "dist_backend": "nccl",

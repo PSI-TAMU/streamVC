@@ -15,7 +15,11 @@ def build_from_path(in_dir):
     files = glob.glob(os.path.join(in_dir, "**/*.pit.npy"), recursive=True)
 
     for i, file in enumerate(tqdm(files)):
-        pitch = np.load(file)
+        try:
+            pitch = np.load(file)
+        except:
+            print(f"Error in file {file}")
+            continue
         if len(pitch) > 0:
             pitch_scaler.partial_fit(pitch.reshape((-1, 1)))
 

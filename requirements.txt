@@ -10,3 +10,4 @@ pyloudnorm
 scikit-learn
 pip==24.0
 fairseq
+vector-quantize-pytorch

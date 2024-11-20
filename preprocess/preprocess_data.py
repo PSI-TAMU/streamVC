@@ -29,6 +29,10 @@ def preprocess_wavs(wav_files, h, device):
         
         # Calculate hubert features
         feat = _hubert.get_feats(wav)
+        hubert_path = (Path(wav).parent.parent / 'hubert')
+        hubert_path.mkdir(parents=True, exist_ok=True)
+        np.save(hubert_path / f"{Path(wav).stem}.hub.npy", feat.squeeze().cpu().numpy())
+
         lab = _kmeans(feat.cpu().numpy()).tolist()
         basename = Path(wav).stem
         lab_path = (Path(wav).parent.parent / 'code')
