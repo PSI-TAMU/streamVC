@@ -143,7 +143,16 @@ hann_window = {}
 
 def get_dataset_filelist(h):
     training_files = list(Path(h.training_fpath).rglob("*.wav"))
-    validation_files = list(Path(h.training_fpath).rglob("*.wav"))
+    training_files, validation_files, _, _ = train_test_split(training_files, training_files, test_size=0.01, random_state=42)
+    # validation_files = list(Path(h.training_fpath).rglob("*.wav"))
+
+    print("Training Files: ", len(training_files))
+    print("Validation Files: ", len(validation_files))
+    return training_files, validation_files,
+
+def get_dataset_filelist_vq(h):
+    training_files = list(Path(h.training_fpath).rglob("*.hub.npy"))
+    training_files, validation_files, _, _ = train_test_split(training_files, training_files, test_size=0.01, random_state=42)
 
     print("Training Files: ", len(training_files))
     print("Validation Files: ", len(validation_files))
@@ -263,8 +272,10 @@ class VQCodeDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         wav_fpath = self.audio_files[index]
-        tokens = wav_fpath.parent.parent / "code" / f"{wav_fpath.stem}.km"
-        hubert_feats = wav_fpath.parent.parent / "hubert" / f"{wav_fpath.stem}.hub.npy"
+        base_path = wav_fpath.stem.split(".")[0]
+        wav_fpath = wav_fpath.parent.parent / "wav" / f"{base_path}.wav"
+        tokens = wav_fpath.parent.parent / "code" / f"{base_path}.km"
+        hubert_feats = wav_fpath.parent.parent / "hubert" / f"{base_path}.hub.npy"
 
         tokens = open(tokens, 'r').readlines()[0].strip()
         tokens = np.array([int(i) for i in tokens.split(" ")])

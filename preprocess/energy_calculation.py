@@ -10,7 +10,7 @@ from src.dataset import mel_spectogram_sb
 def calculate_energy(wav, h, exist_ok=False):
     # Computes energy
     (Path(wav).parent.parent / 'energy').mkdir(parents=True, exist_ok=True)
-    energy_file = Path(wav).parent.parent / 'energy' / f"{Path(wav).stem}.eng"
+    energy_file = Path(wav).parent.parent / 'energy' / f"{Path(wav).stem}.eng.npy"
 
     if exist_ok and os.path.isfile(energy_file):
         return

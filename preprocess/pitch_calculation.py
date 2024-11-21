@@ -9,7 +9,7 @@ def calculate_pitch(wav, h, exist_ok=False):
     audio, fs = torchaudio.load(wav)
     # Computes pitch
     (Path(wav).parent.parent / 'pitch').mkdir(parents=True, exist_ok=True)
-    pitch_file = Path(wav).parent.parent / 'pitch' / f"{Path(wav).stem}.pit"
+    pitch_file = Path(wav).parent.parent / 'pitch' / f"{Path(wav).stem}.pit.npy"
 
     if exist_ok and os.path.isfile(pitch_file):
         return

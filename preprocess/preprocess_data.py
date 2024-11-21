@@ -13,7 +13,7 @@ import speaker.encoder as spkr_encoder
 
 
 
-def preprocess_wavs(wav_files, h, device):
+def preprocess_wavs(wav_files, h, device, exist_ok=False):
     _hubert = HubertFeatureReader(h.hubert_ckpt, h.hubert_layer)
     _kmeans = ApplyKmeans(h.km_path)
 
@@ -21,25 +21,26 @@ def preprocess_wavs(wav_files, h, device):
 
     for wav in tqdm(wav_files):
         # Calculate energy and pitch
-        calculate_energy(wav, h)
-        calculate_pitch(wav, h)
+        calculate_energy(wav, h, exist_ok)
+        calculate_pitch(wav, h, exist_ok)
 
         # Calculate speaker embedding
-        spkr_emb = spkr_encoder.generate_and_save_speaker_embedding(wav)
+        spkr_emb = spkr_encoder.generate_and_save_speaker_embedding(wav, exist_ok=exist_ok)
         
         # Calculate hubert features
-        feat = _hubert.get_feats(wav)
-        hubert_path = (Path(wav).parent.parent / 'hubert')
-        hubert_path.mkdir(parents=True, exist_ok=True)
-        np.save(hubert_path / f"{Path(wav).stem}.hub.npy", feat.squeeze().cpu().numpy())
+        (Path(wav).parent.parent / 'hubert').mkdir(parents=True, exist_ok=True)
+        hubert_path = (Path(wav).parent.parent / 'hubert'/ f"{Path(wav).stem}.hub.npy")
+        if not exist_ok or not hubert_path.exists():
+            feat = _hubert.get_feats(wav)
+            np.save(hubert_path, feat.squeeze().cpu().numpy())
 
-        lab = _kmeans(feat.cpu().numpy()).tolist()
-        basename = Path(wav).stem
-        lab_path = (Path(wav).parent.parent / 'code')
-        lab_path.mkdir(parents=True, exist_ok=True)
-        lab_path = lab_path / f"{basename}.km"
-        with open(lab_path, "w") as f:
-            f.write(" ".join(map(str, lab)))
+            lab = _kmeans(feat.cpu().numpy()).tolist()
+            basename = Path(wav).stem
+            lab_path = (Path(wav).parent.parent / 'code')
+            lab_path.mkdir(parents=True, exist_ok=True)
+            lab_path = lab_path / f"{basename}.km"
+            with open(lab_path, "w") as f:
+                f.write(" ".join(map(str, lab)))
 
 
 def get_wave_files(dataset_path):
@@ -55,6 +56,7 @@ if __name__ == "__main__":
     parser.add_argument("dataset_path", type=str, help="Path to dataset waves.")
     parser.add_argument("-c", "--config", help="config file", dest="config", default='experiments/base/config.json')
     parser.add_argument("-d", "--device", help="device for sprk encoder/hubert", dest="device", default='cuda')
+    parser.add_argument("-e", "--exist_ok", help="overwrite existing files", dest="exist_ok", action='store_true', default=False)
 
     
     args = parser.parse_args()
@@ -63,6 +65,6 @@ if __name__ == "__main__":
     wav_files = get_wave_files(dataset_path)
     h = attr_dict(args.config)
     
-    preprocess_wavs(wav_files, h, args.device)
+    preprocess_wavs(wav_files, h, args.device, args.exist_ok)
 
 

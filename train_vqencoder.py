@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DistributedSampler, DataLoader
 from torch.distributed import init_process_group
 from torch.nn.parallel import DistributedDataParallel
-from src.dataset import VQCodeDataset, get_dataset_filelist
+from src.dataset import VQCodeDataset, get_dataset_filelist_vq
 from src.encoder import Encoder
 from src.quantizer.fsq import FiniteScalarQuantize
 # from src.code_predictor import CodePredictor
@@ -79,7 +79,7 @@ def train(rank, a, h):
 
     scheduler_e = torch.optim.lr_scheduler.ExponentialLR(optim_e, gamma=h.lr_decay, last_epoch=last_epoch)
 
-    training_filelist, validation_filelist = get_dataset_filelist(h)
+    training_filelist, validation_filelist = get_dataset_filelist_vq(h)
 
     trainset = VQCodeDataset(training_filelist, h.segment_size, h.code_hop_size, 
                            h.sampling_rate, device=device)
