@@ -125,7 +125,6 @@ class CodeGenerator(Generator):
         embeds = kwargs['spkr']
         token_feats = self.spk_adapter(x, embeds)
 
-
         # pitch predictor
         avg_pitch = None
         predict_pitch, code_gen_buf[0] = self.pitchPred(token_feats, code_gen_buf[0])

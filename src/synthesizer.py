@@ -65,11 +65,11 @@ def load_models(config, ckpt, device=None):
     _tdnn_model = EncoderClassifier.from_hparams(source='speechbrain/spkrec-ecapa-voxceleb',
                                                  savedir='pretrained_models/speaker/spkrec-ecapa-voxceleb',
                                                  run_opts={'device': device})
-    _xvec_model = EncoderClassifier.from_hparams(source='speechbrain/spkrec-xvect-voxceleb',
-                                                 savedir='pretrained_models/speaker/spkrec-xvect-voxceleb',
-                                                 run_opts={'device': device})
+    # _xvec_model = EncoderClassifier.from_hparams(source='speechbrain/spkrec-xvect-voxceleb',
+    #                                              savedir='pretrained_models/speaker/spkrec-xvect-voxceleb',
+    #                                              run_opts={'device': device})
     _tdnn_model.eval()
-    _xvec_model.eval()
+    # _xvec_model.eval()
     print("Loaded Speaker encoder.")
 
     _anonymizer = DemoAnonymizer(
@@ -88,9 +88,9 @@ def get_speaker_embed(wav_file):
     wave, _ = librosa.load(wav_file, sr=16000)
     wave = torch.tensor(np.trim_zeros(wave))
 
-    spk_emb_x = _xvec_model.encode_batch(wavs=wave.unsqueeze(0)).squeeze()
-    spk_emb_t = _tdnn_model.encode_batch(wavs=wave.unsqueeze(0)).squeeze()
-    embed = torch.cat([spk_emb_x, spk_emb_t], dim=0)
+    # spk_emb_x = _xvec_model.encode_batch(wavs=wave.unsqueeze(0)).squeeze()
+    embed = _tdnn_model.encode_batch(wavs=wave.unsqueeze(0)).squeeze()
+    # embed = torch.cat([spk_emb_x, spk_emb_t], dim=0)
     embed = embed.cpu().numpy()
     return embed
 
@@ -99,7 +99,8 @@ def get_anon_embed(wav_file):
     wave, _ = librosa.load(wav_file, sr=16000)
 
     _anon_spkr = _anonymizer.anonymize_embedding(wave, 16000)
-    anon_spkr = torch.cat([_anon_spkr[192:], _anon_spkr[:192]], dim=0)
+    # anon_spkr = torch.cat([_anon_spkr[192:], _anon_spkr[:192]], dim=0)
+    anon_spkr = _anon_spkr[:192]
 
     anon_spkr = anon_spkr.cpu().numpy()
     return anon_spkr

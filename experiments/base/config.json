@@ -1,14 +1,14 @@
 {
-    "training_fpath": "data",
+    "training_fpath": "/mnt/nvme-data1/waris/streamVC_data/data",
     "validation_fpath": "data",
     "km_path": "pretrained_models/kmeans/data_hubert_base_ls960_layer9_clusters200.bin",
     "hubert_layer": 9,
-    "hubert_ckpt": "pretrained_models/hubert/hubert_base_ls960.pt",
+    "hubert_ckpt": "/mnt/nvme-data1/waris/PSI-TAMU/streamVC/pretrained_models/hubert/hubert_base_ls960.pt",
 
     "spkr_as_snac": true,
     "resblock": "1",
     "num_gpus": 0,
-    "batch_size": 2,
+    "batch_size": 16,
     "learning_rate": 0.0002,
     "adam_b1": 0.8,
     "adam_b2": 0.99,
@@ -18,9 +18,10 @@
     
     "num_codes": 200,
 
-    "embed_in_dim": 704,
+    "embed_in_dim": 192,
     "spkr_dim": 256,
     "sprk_code_dim": 768,
+    "embed_type": "ecapa",
 
     "upsample_rates": [5,4,4,2,2],
     "upsample_kernel_sizes": [11,8,8,4,4],
@@ -72,7 +73,7 @@
 
     "use_speaker_loss": true,
     "use_fairseq_loss": true,
-    "fairseq_checkpoint_path": "pretrained_models/hubert/hubert_base_ls960.pt",
+    "fairseq_checkpoint_path": "/mnt/nvme-data1/waris/PSI-TAMU/streamVC/pretrained_models/hubert/hubert_base_ls960.pt",
 
     "num_workers": 4,
 

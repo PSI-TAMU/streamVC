@@ -141,9 +141,18 @@ mel_basis = {}
 hann_window = {}
 
 
+# def get_dataset_filelist(h):
+#     training_files = list(Path(h.training_fpath).rglob("*.wav"))
+#     validation_files = list(Path(h.training_fpath).rglob("*.wav"))
+
+#     print("Training Files: ", len(training_files))
+#     print("Validation Files: ", len(validation_files))
+#     return training_files, validation_files,
+
 def get_dataset_filelist(h):
     training_files = list(Path(h.training_fpath).rglob("*.wav"))
-    validation_files = list(Path(h.training_fpath).rglob("*.wav"))
+    training_files, validation_files, _, _ = train_test_split(training_files, training_files, test_size=0.01, random_state=42)
+    # validation_files = list(Path(h.training_fpath).rglob("*.wav"))
 
     print("Training Files: ", len(training_files))
     print("Validation Files: ", len(validation_files))
@@ -230,7 +239,7 @@ class CodeDataset(torch.utils.data.Dataset):
 class CodeDatasetPED(torch.utils.data.Dataset):
     def __init__(self, training_files, segment_size, code_hop_size, n_fft, num_mels,
                  hop_size, win_size, sampling_rate, fmin, fmax, km_path, split=True,
-                 device=None, fmax_loss=None):
+                 device=None, fmax_loss=None, embed_type="xvector+ecapa"):
         self.audio_files = training_files
         random.seed(1234)
         self.segment_size = segment_size
@@ -246,6 +255,9 @@ class CodeDatasetPED(torch.utils.data.Dataset):
         self.fmax_loss = fmax_loss
         self.device = device
         self.C_np = self._load_cluster_centres(km_path)
+        self.embed_type = embed_type
+        if self.embed_type not in ["ecapa", "xvector", "xvector+ecapa"]:
+            raise ValueError("Invalid embedding type")
 
     def _load_cluster_centres(self, km_path):
         km_model = joblib.load(km_path)
@@ -276,7 +288,7 @@ class CodeDatasetPED(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         wav_fpath = self.audio_files[index]
-        spkr_embed = wav_fpath.parent.parent / "spkr" / f"{wav_fpath.stem}.spk.npy"
+        spkr_embed_fpath = wav_fpath.parent.parent / "spkr" / f"{wav_fpath.stem}.spk.npy"
         pitch = wav_fpath.parent.parent / "pitch" / f"{wav_fpath.stem}.pit.npy"
         energy = wav_fpath.parent.parent / "energy" / f"{wav_fpath.stem}.eng.npy"
         tokens = wav_fpath.parent.parent / "code" / f"{wav_fpath.stem}.km"
@@ -285,7 +297,16 @@ class CodeDatasetPED(torch.utils.data.Dataset):
         tokens = np.array([int(i) for i in tokens.split(" ")])
         code = self.C_np[tokens].transpose()
             
-        spkr_embed = np.load(spkr_embed)
+        spkr_embed = np.load(spkr_embed_fpath)
+        spkr_embed_loss = np.load(spkr_embed_fpath)
+        if self.embed_type == "xvector":
+            spkr_embed = spkr_embed[:512]
+            assert spkr_embed.shape[0] == 512
+        elif self.embed_type == "ecapa":
+            spkr_embed = spkr_embed[512:]
+            assert spkr_embed.shape[0] == 192
+        else:
+            assert spkr_embed.shape[0] == 704
         spkr_embed = torch.FloatTensor(spkr_embed)
 
         pitch = np.load(pitch)
@@ -339,7 +360,8 @@ class CodeDatasetPED(torch.utils.data.Dataset):
                  "spkr": spkr_embed,
                  "pitch": pitch,
                  "energy": energy,
-                 "tokens": tokens}
+                 "tokens": tokens,
+                 "spkr_embed_loss": spkr_embed_loss}
 
         return feats, audio.squeeze(0), str(wav_fpath), mel_loss.squeeze()
 

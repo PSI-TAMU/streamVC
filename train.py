@@ -70,18 +70,39 @@ def train(rank, a, h):
         state_dict_do = None
 
         # load pretrained encoder
-        cp_g_e = scan_checkpoint(a.pretrained_encoder_path, 'g_')
-        cp_do_e = scan_checkpoint(a.pretrained_encoder_path, 'do_')
-        if cp_g_e is not None or cp_do_e is not None:
-            state_dict_g_e = load_checkpoint(cp_g_e, device)
-            state_dict_do_e = load_checkpoint(cp_do_e, device)
-            encoder.load_state_dict(state_dict_g_e['encoder'])
-            code_predictor.load_state_dict(state_dict_do_e['code_predictor'])
+        # cp_g_e = scan_checkpoint(a.pretrained_encoder_path, 'g_')
+        # cp_do_e = scan_checkpoint(a.pretrained_encoder_path, 'do_')
+        # if cp_g_e is not None or cp_do_e is not None:
+        #     state_dict_g_e = load_checkpoint(cp_g_e, device)
+        #     state_dict_do_e = load_checkpoint(cp_do_e, device)
+        #     encoder.load_state_dict(state_dict_g_e['encoder'])
+        #     code_predictor.load_state_dict(state_dict_do_e['code_predictor'])
+        cp_g_e = scan_checkpoint("/mnt/nvme-data1/waris/PSI-TAMU/streamVC/experiments/base", 'g_')
+        cp_do_e = scan_checkpoint("/mnt/nvme-data1/waris/PSI-TAMU/streamVC/experiments/base", 'do_')
+        state_dict_g_e = load_checkpoint(cp_g_e, device)
+        state_dict_do_e = load_checkpoint(cp_do_e, device)
+        encoder.load_state_dict(state_dict_g_e['encoder'])
+        code_predictor.load_state_dict(state_dict_do_e['code_predictor'])
+        mpd.load_state_dict(state_dict_do_e['mpd'])
+        msd.load_state_dict(state_dict_do_e['msd'])
+
+        from collections import OrderedDict
+        temp = OrderedDict()
+        for i, j in state_dict_g_e['generator'].items():   # search all key from model
+            if "spk_adapter." in i:
+                name = i.replace("spk_adapter.","")  # change key that doesn't match
+                temp[name] = j
+            elif "spk_adapters." in i:
+                name = i.replace("spk_adapters.","")  # change key that doesn't match
+                temp[name] = j
+        generator.load_state_dict(temp, strict=False)
+
+        print("Loaded pretrained models")
+
+        # generator.load_state_dict(state_dict_g['generator'])
     else:
         state_dict_g = load_checkpoint(cp_g, device)
         state_dict_do = load_checkpoint(cp_do, device)
-        encoder.load_state_dict(state_dict_g['encoder'])
-        code_predictor.load_state_dict(state_dict_do['code_predictor'])
         encoder.load_state_dict(state_dict_g['encoder'])
         generator.load_state_dict(state_dict_g['generator'])
         code_predictor.load_state_dict(state_dict_do['code_predictor'])
@@ -123,7 +144,7 @@ def train(rank, a, h):
                            h.n_fft, h.num_mels, h.hop_size,
                            h.win_size, h.sampling_rate, h.fmin, h.fmax, h.km_path,
                            fmax_loss=h.fmax_for_loss,
-                           device=device)
+                           device=device, embed_type=h.embed_type)
 
     train_sampler = DistributedSampler(trainset) if h.num_gpus > 1 else None
 
@@ -135,7 +156,7 @@ def train(rank, a, h):
                                h.n_fft, h.num_mels, h.hop_size,
                                h.win_size, h.sampling_rate, h.fmin, h.fmax, h.km_path,
                                False,
-                               fmax_loss=h.fmax_for_loss, device=device)
+                               fmax_loss=h.fmax_for_loss, device=device, embed_type=h.embed_type)
         validation_loader = DataLoader(validset, num_workers=h.num_workers, shuffle=False, sampler=None,
                                        batch_size=h.batch_size, pin_memory=True, drop_last=True)
 
@@ -187,7 +208,7 @@ def train(rank, a, h):
             # Streaming Decoder
             if hasattr(generator, 'module'):
                 generator_buf = generator.module.init_buffers(y.shape[0], y.device)
-                x['x_hat'] = x_hat
+                x['x_hat'] = x_hat.detach()
                 y_g_hat, generator_buf, predict_pitch, avg_pitch, \
                     predict_energy, avg_energy = generator.module(generator_buf, **x)
             else:
@@ -255,7 +276,7 @@ def train(rank, a, h):
                 loss_f = torch.tensor(0.0)
 
             if h.use_speaker_loss:
-                loss_spkr = 10 * speaker_loss(y_g_hat, x['spkr'], embedder)
+                loss_spkr = 10 * speaker_loss(y_g_hat, x['spkr_embed_loss'], embedder)
                 loss_gen_all += loss_spkr
             else:
                 loss_spkr = torch.tensor(0.0)
@@ -383,7 +404,7 @@ def main():
     parser.add_argument('--stdout_interval', default=20, type=int)
     parser.add_argument('--checkpoint_interval', default=50000, type=int)
     parser.add_argument('--summary_interval', default=50, type=int)
-    parser.add_argument('--validation_interval', default=10, type=int)
+    parser.add_argument('--validation_interval', default=10000, type=int)
 
     a = parser.parse_args()
 
